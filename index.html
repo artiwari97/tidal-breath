@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tidal Breath</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0A1628">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tidal Breath">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-top:#0A1628;
+    --bg-bottom:#0F2A3D;
+    --glass-line: rgba(234,242,245,0.16);
+    --water-deep:#1B6B7A;
+    --water-light:#4FD1C5;
+    --gold:#E8C378;
+    --text-primary:#EAF2F5;
+    --text-muted:#7FA3B0;
+    --panel-bg: rgba(234,242,245,0.05);
+    --panel-bg-hover: rgba(234,242,245,0.09);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(79,209,197,0.08), transparent),
+      linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+    color:var(--text-primary);
+    font-family:'Inter', sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{
+    width:100%;
+    max-width:420px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:28px;
+  }
+  .header{
+    text-align:center;
+  }
+  .eyebrow{
+    font-size:11px;
+    letter-spacing:0.24em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin:0 0 6px;
+  }
+  .title{
+    font-family:'Fraunces', serif;
+    font-weight:500;
+    font-size:28px;
+    margin:0;
+    letter-spacing:0.01em;
+  }
+
+  /* Vessel */
+  .vessel-wrap{
+    position:relative;
+    width:220px;
+    height:220px;
+  }
+  .vessel-glow{
+    position:absolute;
+    inset:-30px;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(79,209,197,0.20), transparent 70%);
+    filter:blur(4px);
+    transition:opacity 0.6s ease;
+  }
+  svg.vessel{
+    position:relative;
+    width:220px;
+    height:220px;
+    display:block;
+  }
+  .phase-label{
+    font-family:'Fraunces', serif;
+    font-weight:500;
+    font-size:22px;
+    color:var(--text-primary);
+    letter-spacing:0.02em;
+  }
+  .phase-underline{
+    width:28px;
+    height:2px;
+    background:var(--gold);
+    margin:8px auto 0;
+    border-radius:2px;
+    opacity:0.85;
+  }
+  .timer-num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:15px;
+    color:var(--text-muted);
+    font-variant-numeric:tabular-nums;
+    margin-top:6px;
+  }
+  .center-text{
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    text-align:center;
+    pointer-events:none;
+  }
+  .cycle-count{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    letter-spacing:0.08em;
+  }
+
+  /* Controls */
+  .controls{
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .phase-inputs{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+  }
+  .field{
+    background:var(--panel-bg);
+    border:1px solid var(--glass-line);
+    border-radius:12px;
+    padding:10px 6px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+    transition:background 0.2s ease, border-color 0.2s ease;
+  }
+  .field.active{
+    border-color: var(--gold);
+    background:var(--panel-bg-hover);
+  }
+  .field-icon{
+    width:16px; height:16px;
+    color:var(--text-muted);
+  }
+  .field.active .field-icon{ color:var(--gold); }
+  .field label{
+    font-size:9px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    text-align:center;
+  }
+  .field input{
+    width:38px;
+    background:transparent;
+    border:none;
+    color:var(--text-primary);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:16px;
+    text-align:center;
+    outline:none;
+    -moz-appearance:textfield;
+  }
+  .field input::-webkit-outer-spin-button,
+  .field input::-webkit-inner-spin-button{
+    -webkit-appearance:none; margin:0;
+  }
+
+  .buttons-row{
+    display:flex;
+    gap:10px;
+  }
+  button{
+    font-family:'Inter', sans-serif;
+    font-size:13px;
+    font-weight:600;
+    letter-spacing:0.02em;
+    border-radius:12px;
+    border:1px solid var(--glass-line);
+    padding:12px 16px;
+    cursor:pointer;
+    transition:all 0.2s ease;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+  }
+  .btn-primary{
+    flex:1;
+    background:linear-gradient(135deg, var(--water-deep), var(--water-light));
+    color:#08181C;
+    border:none;
+  }
+  .btn-primary:hover{ filter:brightness(1.08); }
+  .btn-secondary{
+    background:var(--panel-bg);
+    color:var(--text-primary);
+  }
+  .btn-secondary:hover{ background:var(--panel-bg-hover); }
+  .icon-btn{
+    width:44px; height:44px; padding:0; flex-shrink:0;
+    background:var(--panel-bg);
+    color:var(--text-muted);
+  }
+  .icon-btn.on{ color:var(--gold); border-color:var(--gold); }
+  .icon-btn svg{ width:18px; height:18px; }
+
+  .hint{
+    text-align:center;
+    font-size:11px;
+    color:var(--text-muted);
+    line-height:1.5;
+  }
+
+  .health-row{ margin-top:2px; }
+  .hrv-card{
+    background:var(--panel-bg);
+    border:1px solid var(--glass-line);
+    border-radius:14px;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .hrv-card-title{
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    text-align:center;
+  }
+  .hrv-compare{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+  }
+  .hrv-col{ text-align:center; min-width:80px; }
+  .hrv-label{
+    font-size:10px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-bottom:4px;
+  }
+  .hrv-value{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:22px;
+    color:var(--text-primary);
+  }
+  .hrv-arrow{ color:var(--text-muted); font-size:16px; }
+  .hrv-note{
+    text-align:center;
+    font-size:10.5px;
+    color:var(--text-muted);
+    line-height:1.5;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <p class="eyebrow">Tidal Breath</p>
+    <h1 class="title">Breathe with the tide</h1>
+  </div>
+
+  <div class="vessel-wrap">
+    <div class="vessel-glow" id="glow"></div>
+    <svg class="vessel" viewBox="0 0 220 220">
+      <defs>
+        <clipPath id="vesselClip">
+          <circle cx="110" cy="110" r="92"/>
+        </clipPath>
+        <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--water-light)"/>
+          <stop offset="100%" stop-color="var(--water-deep)"/>
+        </linearGradient>
+      </defs>
+      <circle cx="110" cy="110" r="92" fill="none" stroke="var(--glass-line)" stroke-width="1.5"/>
+      <g clip-path="url(#vesselClip)">
+        <rect id="water" x="0" y="202" width="220" height="220" fill="url(#waterGrad)"/>
+        <path id="wave" d="M0,202 Q27.5,196 55,202 T110,202 T165,202 T220,202 V220 H0 Z" fill="url(#waterGrad)" opacity="0.85"/>
+      </g>
+      <circle cx="110" cy="110" r="92" fill="none" stroke="rgba(234,242,245,0.06)" stroke-width="6"/>
+    </svg>
+    <div class="center-text">
+      <div class="phase-label" id="phaseLabel">Ready</div>
+      <div class="phase-underline"></div>
+      <div class="timer-num" id="timerNum">--</div>
+    </div>
+  </div>
+
+  <div class="cycle-count" id="cycleCount">CYCLE 0</div>
+
+  <div class="controls">
+    <div class="phase-inputs">
+      <div class="field" id="field-inhale">
+        <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M12 5l-6 6M12 5l6 6"/></svg>
+        <label>Inhale</label>
+        <input type="number" id="inhale" min="0" max="60" value="4">
+      </div>
+      <div class="field" id="field-hold1">
+        <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5v14M15 5v14"/></svg>
+        <label>Hold</label>
+        <input type="number" id="hold1" min="0" max="60" value="4">
+      </div>
+      <div class="field" id="field-exhale">
+        <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M12 19l-6-6M12 19l6-6"/></svg>
+        <label>Exhale</label>
+        <input type="number" id="exhale" min="0" max="60" value="4">
+      </div>
+      <div class="field" id="field-hold2">
+        <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5v14M15 5v14"/></svg>
+        <label>Hold</label>
+        <input type="number" id="hold2" min="0" max="60" value="4">
+      </div>
+    </div>
+
+    <div class="buttons-row">
+      <button class="btn-primary" id="startBtn">Begin</button>
+      <button class="icon-btn" id="soundBtn" title="Toggle ambient sound">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+      </button>
+      <button class="icon-btn on" id="beepBtn" title="Toggle transition chime">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </button>
+    </div>
+    <p class="hint" id="hint">Set your counts, then press Begin. Ambient sound and chimes need a tap to start (browser rule).</p>
+
+    <div class="health-row">
+      <button class="btn-secondary" id="healthBtn" style="width:100%;">Connect heart rate data</button>
+    </div>
+    <div class="hrv-card" id="hrvCard" style="display:none;">
+      <div class="hrv-card-title">This session</div>
+      <div class="hrv-compare">
+        <div class="hrv-col">
+          <div class="hrv-label">Before</div>
+          <div class="hrv-value" id="hrvBefore">—</div>
+        </div>
+        <div class="hrv-arrow">→</div>
+        <div class="hrv-col">
+          <div class="hrv-label">After</div>
+          <div class="hrv-value" id="hrvAfter">—</div>
+        </div>
+      </div>
+      <div class="hrv-note" id="hrvNote"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---------------------------------------------------------------------
+// Health data (Google Health API / Fitbit) — HRV before/after comparison
+// ---------------------------------------------------------------------
+// Fill these in after completing the setup steps in SETUP.md:
+const HEALTH_CONFIG = {
+  CLIENT_ID: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+  TOKEN_RELAY_URL: 'https://YOUR-WORKER-SUBDOMAIN.workers.dev',
+  SCOPE: 'https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly'
+};
+
+const Health = (function(){
+  const healthBtn = document.getElementById('healthBtn');
+  const hrvCard = document.getElementById('hrvCard');
+  const hrvBefore = document.getElementById('hrvBefore');
+  const hrvAfter = document.getElementById('hrvAfter');
+  const hrvNote = document.getElementById('hrvNote');
+
+  let beforeSnapshot = null;
+
+  function isConfigured(){
+    return HEALTH_CONFIG.CLIENT_ID && !HEALTH_CONFIG.CLIENT_ID.startsWith('YOUR_')
+        && HEALTH_CONFIG.TOKEN_RELAY_URL && !HEALTH_CONFIG.TOKEN_RELAY_URL.includes('YOUR-WORKER');
+  }
+
+  function redirectUri(){
+    // Must exactly match an "Authorized redirect URI" in your Google Cloud OAuth client.
+    return window.location.origin + window.location.pathname;
+  }
+
+  // ---- PKCE helpers ----
+  function randomString(len){
+    const arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, b => ('0' + b.toString(16)).slice(-2)).join('').slice(0, len);
+  }
+  function base64url(buffer){
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  async function challengeFromVerifier(verifier){
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    return base64url(digest);
+  }
+
+  // ---- Token storage (kept on this device only) ----
+  function getTokens(){
+    try { return JSON.parse(localStorage.getItem('tidal_health_tokens') || 'null'); }
+    catch(e){ return null; }
+  }
+  function setTokens(t){ localStorage.setItem('tidal_health_tokens', JSON.stringify(t)); }
+  function clearTokens(){ localStorage.removeItem('tidal_health_tokens'); }
+
+  async function beginLogin(){
+    const verifier = randomString(64);
+    sessionStorage.setItem('tidal_pkce_verifier', verifier);
+    const challenge = await challengeFromVerifier(verifier);
+    const params = new URLSearchParams({
+      client_id: HEALTH_CONFIG.CLIENT_ID,
+      redirect_uri: redirectUri(),
+      response_type: 'code',
+      scope: HEALTH_CONFIG.SCOPE,
+      access_type: 'offline',
+      prompt: 'consent',
+      code_challenge: challenge,
+      code_challenge_method: 'S256'
+    });
+    window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+  }
+
+  async function handleRedirectIfPresent(){
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+    if(!code) return;
+    const verifier = sessionStorage.getItem('tidal_pkce_verifier');
+    url.searchParams.delete('code');
+    url.searchParams.delete('scope');
+    url.searchParams.delete('state');
+    history.replaceState({}, '', url.toString());
+    if(!verifier) return;
+    try {
+      const res = await fetch(HEALTH_CONFIG.TOKEN_RELAY_URL + '/token', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: redirectUri() })
+      });
+      const tokens = await res.json();
+      if(tokens.access_token){
+        tokens.obtained_at = Date.now();
+        setTokens(tokens);
+        updateButton();
+      }
+    } catch(e){ console.warn('Health token exchange failed', e); }
+  }
+
+  async function getValidAccessToken(){
+    let t = getTokens();
+    if(!t) return null;
+    const ageSec = (Date.now() - t.obtained_at) / 1000;
+    if(ageSec < (t.expires_in || 3600) - 60) return t.access_token;
+    // expired — refresh via relay
+    try {
+      const res = await fetch(HEALTH_CONFIG.TOKEN_RELAY_URL + '/refresh', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ refresh_token: t.refresh_token })
+      });
+      const fresh = await res.json();
+      if(fresh.access_token){
+        fresh.refresh_token = fresh.refresh_token || t.refresh_token;
+        fresh.obtained_at = Date.now();
+        setTokens(fresh);
+        return fresh.access_token;
+      }
+    } catch(e){ console.warn('Health token refresh failed', e); }
+    return null;
+  }
+
+  function updateButton(){
+    const connected = !!getTokens();
+    healthBtn.textContent = connected ? 'Heart rate data connected ✓' : 'Connect heart rate data';
+  }
+
+  // ---- Fetching + a simple heart-rate variability proxy ----
+  // Real Fitbit-computed HRV is only calculated overnight during sleep, not on demand.
+  // This computes the RMS of successive heart-rate differences over a short window as
+  // an approximate, same-device proxy for variability — useful for relative before/after
+  // comparison, not a clinical HRV number.
+  async function fetchHeartRateWindow(accessToken, startDate, endDate){
+    const filter = `heartRate.sample_time.physical_time >= "${startDate.toISOString()}" AND heartRate.sample_time.physical_time < "${endDate.toISOString()}"`;
+    const url = 'https://health.googleapis.com/v4/users/me/dataTypes/heartRate/dataPoints?' +
+      new URLSearchParams({ filter, pageSize: '300' });
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!res.ok) throw new Error('Heart rate fetch failed: ' + res.status);
+    const data = await res.json();
+    return data.dataPoints || [];
+  }
+
+  function variabilityProxy(points){
+    const bpms = points
+      .map(p => p.heartRate && p.heartRate.bpm)
+      .filter(v => typeof v === 'number');
+    if(bpms.length < 3) return null;
+    let sumSq = 0;
+    for(let i = 1; i < bpms.length; i++){
+      const d = bpms[i] - bpms[i-1];
+      sumSq += d * d;
+    }
+    const rms = Math.sqrt(sumSq / (bpms.length - 1));
+    const avgBpm = bpms.reduce((a,b) => a+b, 0) / bpms.length;
+    return { rms: rms, avgBpm: avgBpm, sampleCount: bpms.length, latest: points[points.length - 1] };
+  }
+
+  async function snapshotNow(){
+    const token = await getValidAccessToken();
+    if(!token) return null;
+    const end = new Date();
+    const start = new Date(end.getTime() - 3 * 60 * 1000); // last 3 minutes of available data
+    const points = await fetchHeartRateWindow(token, start, end);
+    return variabilityProxy(points);
+  }
+
+  async function captureBefore(){
+    beforeSnapshot = null;
+    if(!isConfigured() || !getTokens()) return;
+    beforeSnapshot = await snapshotNow().catch(() => null);
+  }
+
+  async function captureAfterAndCompare(){
+    if(!isConfigured() || !getTokens()) return;
+    const after = await snapshotNow().catch(() => null);
+    if(!beforeSnapshot && !after) return;
+
+    hrvCard.style.display = 'flex';
+    hrvBefore.textContent = beforeSnapshot ? beforeSnapshot.rms.toFixed(1) : '—';
+    hrvAfter.textContent = after ? after.rms.toFixed(1) : '—';
+
+    if(beforeSnapshot && after){
+      const delta = after.rms - beforeSnapshot.rms;
+      const dir = delta > 0.3 ? 'higher' : delta < -0.3 ? 'lower' : 'about the same';
+      hrvNote.textContent = `Variability proxy (RMS of bpm swings) was ${dir} after this session. ` +
+        `Based on your Fitbit's most recently synced data — if your tracker hasn't synced in the last few minutes, "after" may reflect an earlier moment than right now.`;
+    } else {
+      hrvNote.textContent = 'Not enough recently-synced heart rate data for a full comparison. Open the Fitbit app to force a sync, then try again.';
+    }
+  }
+
+  healthBtn.addEventListener('click', () => {
+    if(!isConfigured()){
+      alert('Heart rate connection isn\'t set up yet — see SETUP.md for the two quick steps needed (Google Cloud + a small relay service).');
+      return;
+    }
+    if(getTokens()){
+      clearTokens();
+      updateButton();
+      hrvCard.style.display = 'none';
+    } else {
+      beginLogin();
+    }
+  });
+
+  handleRedirectIfPresent().then(updateButton);
+  updateButton();
+
+  return { captureBefore, captureAfterAndCompare };
+})();
+</script>
+<script>
+(function(){
+  const inputs = {
+    inhale: document.getElementById('inhale'),
+    hold1: document.getElementById('hold1'),
+    exhale: document.getElementById('exhale'),
+    hold2: document.getElementById('hold2'),
+  };
+  const fields = {
+    inhale: document.getElementById('field-inhale'),
+    hold1: document.getElementById('field-hold1'),
+    exhale: document.getElementById('field-exhale'),
+    hold2: document.getElementById('field-hold2'),
+  };
+  const phaseLabel = document.getElementById('phaseLabel');
+  const timerNum = document.getElementById('timerNum');
+  const cycleCount = document.getElementById('cycleCount');
+  const startBtn = document.getElementById('startBtn');
+  const soundBtn = document.getElementById('soundBtn');
+  const beepBtn = document.getElementById('beepBtn');
+  const hint = document.getElementById('hint');
+  const water = document.getElementById('water');
+  const wave = document.getElementById('wave');
+  const glow = document.getElementById('glow');
+
+  let running = false;
+  let soundOn = false;
+  let beepOn = true;
+  let raf = null;
+  let cycles = 0;
+  let phaseIndex = 0;
+  let phaseStart = 0;
+  let phases = [];
+  let waveT = 0;
+
+  // ---------- Audio ----------
+  let actx = null;
+  let ambientNodes = null;
+  let ambientGainTarget = 0.05;
+
+  function ensureAudio(){
+    if(!actx){
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(actx.state === 'suspended') actx.resume();
+  }
+
+  function beep(freq){
+    if(!beepOn) return;
+    ensureAudio();
+    const t0 = actx.currentTime;
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(0.18, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+    osc.connect(gain).connect(actx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.55);
+  }
+
+  function buildAmbient(){
+    ensureAudio();
+    // swellGain holds the pad's own "breathing" volume level (modulated by the
+    // slow LFO below). muteGain is a SEPARATE multiplicative stage dedicated
+    // purely to on/off control, so setting it to 0 always produces true
+    // silence no matter what the swell is doing upstream.
+    const swellGain = actx.createGain();
+    swellGain.gain.value = ambientGainTarget;
+
+    const muteGain = actx.createGain();
+    muteGain.gain.value = 0;
+
+    const filter = actx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 900;
+
+    filter.connect(swellGain).connect(muteGain).connect(actx.destination);
+
+    const freqs = [110, 164.81, 220, 246.94]; // A2, E3, A3, B3 - open, calm interval stack
+    const oscs = [];
+    freqs.forEach((f, i) => {
+      const osc = actx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const og = actx.createGain();
+      og.gain.value = 0.18 / (i + 1);
+      osc.connect(og).connect(filter);
+      osc.start();
+      oscs.push(osc);
+
+      // slow detune LFO per oscillator for gentle chorus/shimmer
+      const lfo = actx.createOscillator();
+      lfo.frequency.value = 0.05 + i * 0.02;
+      const lfoGain = actx.createGain();
+      lfoGain.gain.value = 3 + i;
+      lfo.connect(lfoGain).connect(osc.detune);
+      lfo.start();
+      oscs.push(lfo);
+    });
+
+    // slow swell on the pad's own volume (tide breathing on its own slower cycle) —
+    // this modulates swellGain only, never the mute stage, so it can't leak sound through.
+    const swell = actx.createOscillator();
+    swell.frequency.value = 0.03;
+    const swellLfoGain = actx.createGain();
+    swellLfoGain.gain.value = 0.02;
+    swell.connect(swellLfoGain).connect(swellGain.gain);
+    swell.start();
+
+    return { swellGain, muteGain, oscs, filter };
+  }
+
+  function setAmbient(on){
+    soundOn = on;
+    soundBtn.classList.toggle('on', on);
+    if(on){
+      ensureAudio();
+      if(!ambientNodes) ambientNodes = buildAmbient();
+      const g = ambientNodes.muteGain.gain;
+      g.cancelScheduledValues(actx.currentTime);
+      g.setValueAtTime(g.value, actx.currentTime);
+      g.linearRampToValueAtTime(1, actx.currentTime + 1.2);
+    } else if(ambientNodes){
+      const g = ambientNodes.muteGain.gain;
+      g.cancelScheduledValues(actx.currentTime);
+      g.setValueAtTime(g.value, actx.currentTime);
+      g.linearRampToValueAtTime(0, actx.currentTime + 0.8);
+    }
+  }
+
+  soundBtn.addEventListener('click', () => setAmbient(!soundOn));
+  beepBtn.addEventListener('click', () => {
+    beepOn = !beepOn;
+    beepBtn.classList.toggle('on', beepOn);
+  });
+
+  // ---------- Breathing logic ----------
+  function getPhases(){
+    const vals = {
+      inhale: parseFloat(inputs.inhale.value) || 0,
+      hold1: parseFloat(inputs.hold1.value) || 0,
+      exhale: parseFloat(inputs.exhale.value) || 0,
+      hold2: parseFloat(inputs.hold2.value) || 0,
+    };
+    const list = [];
+    if(vals.inhale > 0) list.push({name:'Inhale', key:'inhale', dur:vals.inhale, freq:523.25, dir:'up'});
+    if(vals.hold1 > 0)  list.push({name:'Hold', key:'hold1', dur:vals.hold1, freq:659.25, dir:'hold'});
+    if(vals.exhale > 0) list.push({name:'Exhale', key:'exhale', dur:vals.exhale, freq:392.00, dir:'down'});
+    if(vals.hold2 > 0)  list.push({name:'Hold', key:'hold2', dur:vals.hold2, freq:659.25, dir:'hold'});
+    return list;
+  }
+
+  function setActiveField(key){
+    Object.keys(fields).forEach(k => fields[k].classList.toggle('active', k === key));
+  }
+
+  function waterLevelFor(dir, progress){
+    // progress 0..1 within the phase
+    const minY = 30;  // near-full (top)
+    const maxY = 202; // near-empty (bottom)
+    if(dir === 'up'){
+      return maxY - (maxY - minY) * easeInOut(progress);
+    } else if(dir === 'down'){
+      return minY + (maxY - minY) * easeInOut(progress);
+    }
+    return null; // hold: keep last level
+  }
+
+  function easeInOut(t){
+    return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2) / 2;
+  }
+
+  let lastLevel = 202;
+
+  function renderFrame(ts){
+    if(!running) return;
+    const phase = phases[phaseIndex];
+    const elapsed = (ts - phaseStart) / 1000;
+    const remaining = Math.max(0, phase.dur - elapsed);
+    timerNum.textContent = Math.ceil(remaining) + 's';
+
+    let level = waterLevelFor(phase.dir, Math.min(1, elapsed / phase.dur));
+    if(level === null) level = lastLevel; else lastLevel = level;
+
+    water.setAttribute('y', level);
+    waveT += 0.05;
+    const amp = 3;
+    const baseY = level;
+    wave.setAttribute('d',
+      `M0,${baseY} Q27.5,${baseY - amp*Math.sin(waveT)} 55,${baseY} T110,${baseY} T165,${baseY} T220,${baseY} V220 H0 Z`
+    );
+
+    glow.style.opacity = phase.dir === 'up' ? 0.9 : phase.dir === 'down' ? 0.5 : 0.7;
+
+    if(elapsed >= phase.dur){
+      advancePhase(ts);
+    } else {
+      raf = requestAnimationFrame(renderFrame);
+    }
+  }
+
+  function advancePhase(ts){
+    phaseIndex++;
+    if(phaseIndex >= phases.length){
+      phaseIndex = 0;
+      cycles++;
+      cycleCount.textContent = 'CYCLE ' + cycles;
+    }
+    const phase = phases[phaseIndex];
+    phaseLabel.textContent = phase.name;
+    setActiveField(phase.key);
+    beep(phase.freq);
+    phaseStart = ts;
+    raf = requestAnimationFrame(renderFrame);
+  }
+
+  function start(){
+    phases = getPhases();
+    if(phases.length === 0){
+      hint.textContent = 'Enter at least one duration greater than zero.';
+      return;
+    }
+    ensureAudio();
+    running = true;
+    cycles = 0;
+    phaseIndex = 0;
+    cycleCount.textContent = 'CYCLE 0';
+    startBtn.textContent = 'Stop';
+    hint.textContent = 'Following the tide. Adjust counts anytime — they apply next cycle.';
+    lastLevel = 202;
+    water.setAttribute('y', 202);
+    const phase = phases[0];
+    phaseLabel.textContent = phase.name;
+    setActiveField(phase.key);
+    beep(phase.freq);
+    phaseStart = performance.now();
+    raf = requestAnimationFrame(renderFrame);
+    Object.values(inputs).forEach(i => i.disabled = true);
+    Health.captureBefore();
+  }
+
+  function stop(){
+    running = false;
+    if(raf) cancelAnimationFrame(raf);
+    startBtn.textContent = 'Begin';
+    phaseLabel.textContent = 'Ready';
+    timerNum.textContent = '--';
+    glow.style.opacity = 0.6;
+    setActiveField(null);
+    hint.textContent = 'Set your counts, then press Begin.';
+    Object.values(inputs).forEach(i => i.disabled = false);
+    Health.captureAfterAndCompare();
+  }
+
+  startBtn.addEventListener('click', () => {
+    ensureAudio();
+    if(running) stop(); else start();
+  });
+
+  // gentle default: nudge ambient on shortly after first interaction is optional; keep off by default.
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
