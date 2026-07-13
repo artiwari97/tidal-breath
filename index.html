@@ -348,6 +348,8 @@
 
     <div class="health-row">
       <button class="btn-secondary" id="healthBtn" style="width:100%;">Connect heart rate data</button>
+      <button class="btn-secondary" id="suggestBtn" style="width:100%; margin-top:8px;">Suggest pace from my data</button>
+      <p class="hint" id="suggestNote" style="display:none; margin-top:8px;"></p>
     </div>
     <div class="hrv-card" id="hrvCard" style="display:none;">
       <div class="hrv-card-title">This session</div>
@@ -381,6 +383,8 @@ const HEALTH_CONFIG = {
 
 const Health = (function(){
   const healthBtn = document.getElementById('healthBtn');
+  const suggestBtn = document.getElementById('suggestBtn');
+  const suggestNote = document.getElementById('suggestNote');
   const hrvCard = document.getElementById('hrvCard');
   const hrvBefore = document.getElementById('hrvBefore');
   const hrvAfter = document.getElementById('hrvAfter');
@@ -497,8 +501,8 @@ const Health = (function(){
   // an approximate, same-device proxy for variability — useful for relative before/after
   // comparison, not a clinical HRV number.
   async function fetchHeartRateWindow(accessToken, startDate, endDate){
-    const filter = `heartRate.sample_time.physical_time >= "${startDate.toISOString()}" AND heartRate.sample_time.physical_time < "${endDate.toISOString()}"`;
-    const url = 'https://health.googleapis.com/v4/users/me/dataTypes/heartRate/dataPoints?' +
+    const filter = `heart_rate.sample_time.physical_time >= "${startDate.toISOString()}" AND heart_rate.sample_time.physical_time < "${endDate.toISOString()}"`;
+    const url = 'https://health.googleapis.com/v4/users/me/dataTypes/heart-rate/dataPoints?' +
       new URLSearchParams({ filter, pageSize: '300' });
     const res = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
     if(!res.ok) throw new Error('Heart rate fetch failed: ' + res.status);
@@ -508,8 +512,8 @@ const Health = (function(){
 
   function variabilityProxy(points){
     const bpms = points
-      .map(p => p.heartRate && p.heartRate.bpm)
-      .filter(v => typeof v === 'number');
+      .map(p => p.heartRate && Number(p.heartRate.beatsPerMinute))
+      .filter(v => typeof v === 'number' && !Number.isNaN(v));
     if(bpms.length < 3) return null;
     let sumSq = 0;
     for(let i = 1; i < bpms.length; i++){
@@ -528,6 +532,79 @@ const Health = (function(){
     const start = new Date(end.getTime() - 3 * 60 * 1000); // last 3 minutes of available data
     const points = await fetchHeartRateWindow(token, start, end);
     return variabilityProxy(points);
+  }
+
+  // ---- Daily summary fetchers (for resting HR / official HRV context) ----
+  function isoDate(d){ return d.toISOString().slice(0, 10); }
+
+  async function fetchLatestDaily(accessToken, kebabType, filterKey, unionField, daysBack){
+    const end = new Date();
+    const start = new Date(end.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    const endExclusive = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+    const filter = `${filterKey}.date >= "${isoDate(start)}" AND ${filterKey}.date < "${isoDate(endExclusive)}"`;
+    const url = `https://health.googleapis.com/v4/users/me/dataTypes/${kebabType}/dataPoints?` +
+      new URLSearchParams({ filter, pageSize: '30' });
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!res.ok) return null;
+    const data = await res.json();
+    const points = (data.dataPoints || []).filter(p => p[unionField] && p[unionField].date);
+    if(points.length === 0) return null;
+    points.sort((a, b) => {
+      const da = a[unionField].date, db = b[unionField].date;
+      const va = da.year * 10000 + da.month * 100 + da.day;
+      const vb = db.year * 10000 + db.month * 100 + db.day;
+      return vb - va; // most recent first
+    });
+    return points[0][unionField];
+  }
+
+  // Suggests a starting inhale/exhale pace using resting heart rate, aimed at the
+  // ~4.5–6.5 breaths/minute range generally associated with higher HRV during
+  // paced breathing. This is a heuristic starting point, not a personalized
+  // resonance-frequency measurement — that requires an actual biofeedback test
+  // trying several paces and comparing HRV at each. Holds are set to 0 (smooth
+  // continuous breathing) since that's the standard protocol for this style of
+  // practice; add holds back manually if you prefer box breathing.
+  async function suggestBreathingTimes(){
+    const token = await getValidAccessToken();
+    if(!token){
+      alert('Connect your heart rate data first, then try this again.');
+      return;
+    }
+    suggestBtn.disabled = true;
+    suggestBtn.textContent = 'Checking your data…';
+    try {
+      const [resting, hrv] = await Promise.all([
+        fetchLatestDaily(token, 'daily-resting-heart-rate', 'daily_resting_heart_rate', 'dailyRestingHeartRate', 14).catch(() => null),
+        fetchLatestDaily(token, 'daily-heart-rate-variability', 'daily_heart_rate_variability', 'dailyHeartRateVariability', 14).catch(() => null),
+      ]);
+
+      const restingBpm = resting ? Number(resting.beatsPerMinute) : null;
+      const hrvMs = hrv && typeof hrv.averageHeartRateVariabilityMilliseconds === 'number'
+        ? hrv.averageHeartRateVariabilityMilliseconds : null;
+
+      const clampedRHR = Math.min(80, Math.max(50, restingBpm || 65));
+      const breathsPerMin = 4.5 + ((clampedRHR - 50) / 30) * 2.0; // maps 50–80 bpm → 4.5–6.5 breaths/min
+      const totalCycle = 60 / breathsPerMin;
+      const inhale = Math.max(2, Math.round(totalCycle * 0.45));
+      const exhale = Math.max(2, Math.round(totalCycle - inhale));
+
+      document.getElementById('inhale').value = inhale;
+      document.getElementById('hold1').value = 0;
+      document.getElementById('exhale').value = exhale;
+      document.getElementById('hold2').value = 0;
+
+      const parts = [];
+      parts.push(`Suggested ${inhale}s inhale / ${exhale}s exhale (~${breathsPerMin.toFixed(1)} breaths/min)`);
+      parts.push(restingBpm ? `based on your resting heart rate of ${restingBpm} bpm` : 'using a default resting heart rate (none found in the last 14 days)');
+      if(hrvMs) parts.push(`Your most recent recorded HRV: ${hrvMs.toFixed(0)} ms`);
+      parts.push('This is a starting point, not a personalized measurement — nudge the times if it feels too fast or slow');
+      suggestNote.textContent = parts.join('. ') + '.';
+      suggestNote.style.display = 'block';
+    } finally {
+      suggestBtn.disabled = false;
+      suggestBtn.textContent = 'Suggest pace from my data';
+    }
   }
 
   async function captureBefore(){
@@ -564,9 +641,22 @@ const Health = (function(){
       clearTokens();
       updateButton();
       hrvCard.style.display = 'none';
+      suggestNote.style.display = 'none';
     } else {
       beginLogin();
     }
+  });
+
+  suggestBtn.addEventListener('click', () => {
+    if(!isConfigured()){
+      alert('Heart rate connection isn\'t set up yet — see SETUP.md for the two quick steps needed (Google Cloud + a small relay service).');
+      return;
+    }
+    if(!getTokens()){
+      alert('Connect your heart rate data first (button above), then try this again.');
+      return;
+    }
+    suggestBreathingTimes();
   });
 
   handleRedirectIfPresent().then(updateButton);
