@@ -270,6 +270,44 @@
     line-height:1.5;
   }
 
+  .hr-card{
+    background:var(--panel-bg);
+    border:1px solid var(--glass-line);
+    border-radius:14px;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .hr-live-row{
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:6px;
+  }
+  .hr-current{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:32px;
+    color:var(--text-primary);
+    line-height:1;
+  }
+  .hr-unit{
+    font-size:11px;
+    color:var(--text-muted);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+  }
+  .hr-updated{
+    font-size:10px;
+    color:var(--text-muted);
+    margin-left:8px;
+  }
+  #hrChart{
+    width:100%;
+    height:90px;
+    display:block;
+  }
+
   @media (prefers-reduced-motion: reduce){
     *{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; }
   }
@@ -351,6 +389,15 @@
       <button class="btn-secondary" id="suggestBtn" style="width:100%; margin-top:8px;">Suggest pace from my data</button>
       <p class="hint" id="suggestNote" style="display:none; margin-top:8px;"></p>
     </div>
+    <div class="hr-card" id="hrCard" style="display:none;">
+      <div class="hrv-card-title">Heart rate</div>
+      <div class="hr-live-row">
+        <div class="hr-current" id="hrCurrent">--</div>
+        <div class="hr-unit">bpm</div>
+        <div class="hr-updated" id="hrUpdated"></div>
+      </div>
+      <svg id="hrChart" viewBox="0 0 320 90" preserveAspectRatio="none"></svg>
+    </div>
     <div class="hrv-card" id="hrvCard" style="display:none;">
       <div class="hrv-card-title">This session</div>
       <div class="hrv-compare">
@@ -386,11 +433,17 @@ const Health = (function(){
   const suggestBtn = document.getElementById('suggestBtn');
   const suggestNote = document.getElementById('suggestNote');
   const hrvCard = document.getElementById('hrvCard');
+  const hrCard = document.getElementById('hrCard');
+  const hrCurrent = document.getElementById('hrCurrent');
+  const hrUpdated = document.getElementById('hrUpdated');
+  const hrChart = document.getElementById('hrChart');
   const hrvBefore = document.getElementById('hrvBefore');
   const hrvAfter = document.getElementById('hrvAfter');
   const hrvNote = document.getElementById('hrvNote');
 
   let beforeSnapshot = null;
+  let sessionMarkers = []; // {t: epoch ms, phase: 'Inhale'|'Hold'|'Exhale'}
+  let pollTimer = null;
 
   function isConfigured(){
     return HEALTH_CONFIG.CLIENT_ID && !HEALTH_CONFIG.CLIENT_ID.startsWith('YOUR_')
@@ -493,6 +546,7 @@ const Health = (function(){
   function updateButton(){
     const connected = !!getTokens();
     healthBtn.textContent = connected ? 'Heart rate data connected ✓' : 'Connect heart rate data';
+    if(connected) startPolling(); else stopPolling();
   }
 
   // ---- Fetching + a simple heart-rate variability proxy ----
@@ -510,10 +564,18 @@ const Health = (function(){
     return data.dataPoints || [];
   }
 
+  function toSeries(points){
+    return points
+      .map(p => (p.heartRate && p.heartRate.sampleTime && p.heartRate.sampleTime.physicalTime && typeof p.heartRate.beatsPerMinute !== 'undefined')
+        ? { t: new Date(p.heartRate.sampleTime.physicalTime), bpm: Number(p.heartRate.beatsPerMinute) }
+        : null)
+      .filter(p => p && !Number.isNaN(p.bpm))
+      .sort((a, b) => a.t - b.t);
+  }
+
   function variabilityProxy(points){
-    const bpms = points
-      .map(p => p.heartRate && Number(p.heartRate.beatsPerMinute))
-      .filter(v => typeof v === 'number' && !Number.isNaN(v));
+    const series = toSeries(points);
+    const bpms = series.map(p => p.bpm);
     if(bpms.length < 3) return null;
     let sumSq = 0;
     for(let i = 1; i < bpms.length; i++){
@@ -522,8 +584,90 @@ const Health = (function(){
     }
     const rms = Math.sqrt(sumSq / (bpms.length - 1));
     const avgBpm = bpms.reduce((a,b) => a+b, 0) / bpms.length;
-    return { rms: rms, avgBpm: avgBpm, sampleCount: bpms.length, latest: points[points.length - 1] };
+    return { rms: rms, avgBpm: avgBpm, sampleCount: bpms.length, series };
   }
+
+  // ---- Live heart rate chart ----
+  function phaseColor(phase){
+    if(phase === 'Inhale') return 'var(--gold)';
+    if(phase === 'Exhale') return 'var(--water-light)';
+    return 'var(--text-muted)';
+  }
+
+  function renderHRChart(series){
+    const w = 320, h = 90, pad = 8;
+    if(series.length < 2){
+      hrChart.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" fill="var(--text-muted)" font-size="11">Waiting for synced data…</text>`;
+      return;
+    }
+    const times = series.map(p => p.t.getTime());
+    const bpms = series.map(p => p.bpm);
+    const minT = Math.min(...times), maxT = Math.max(...times);
+    const minB = Math.min(...bpms) - 2, maxB = Math.max(...bpms) + 2;
+    const x = t => pad + (w - 2*pad) * ((t - minT) / ((maxT - minT) || 1));
+    const y = b => (h - pad) - (h - 2*pad) * ((b - minB) / ((maxB - minB) || 1));
+
+    const d = series.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t.getTime()).toFixed(1)},${y(p.bpm).toFixed(1)}`).join(' ');
+
+    let markers = '';
+    sessionMarkers.forEach(m => {
+      if(m.t >= minT && m.t <= maxT){
+        const mx = x(m.t).toFixed(1);
+        markers += `<line x1="${mx}" y1="${pad}" x2="${mx}" y2="${h-pad}" stroke="${phaseColor(m.phase)}" stroke-width="1" stroke-dasharray="2,2" opacity="0.55"/>`;
+      }
+    });
+
+    const last = series[series.length - 1];
+    const lastX = x(last.t.getTime()).toFixed(1);
+    const lastY = y(last.bpm).toFixed(1);
+
+    hrChart.innerHTML = `
+      ${markers}
+      <path d="${d}" fill="none" stroke="var(--water-light)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${lastX}" cy="${lastY}" r="3.5" fill="var(--gold)"/>
+    `;
+  }
+
+  async function pollHeartRate(){
+    const token = await getValidAccessToken();
+    if(!token) return;
+    const end = new Date();
+    const start = new Date(end.getTime() - 10 * 60 * 1000); // trailing 10-minute window
+    try {
+      const points = await fetchHeartRateWindow(token, start, end);
+      const series = toSeries(points);
+      if(series.length){
+        const last = series[series.length - 1];
+        hrCurrent.textContent = last.bpm;
+        const ageMin = Math.round((Date.now() - last.t.getTime()) / 60000);
+        hrUpdated.textContent = ageMin < 1 ? 'updated just now' : `synced ~${ageMin}m ago`;
+      } else {
+        hrCurrent.textContent = '--';
+        hrUpdated.textContent = 'no recent data — open the Fitbit app to sync';
+      }
+      renderHRChart(series);
+      hrCard.style.display = 'flex';
+    } catch(e){ console.warn('Heart rate poll failed', e); }
+  }
+
+  function startPolling(){
+    if(pollTimer) return;
+    pollHeartRate();
+    pollTimer = setInterval(pollHeartRate, 30000);
+  }
+  function stopPolling(){
+    if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    hrCard.style.display = 'none';
+  }
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden) stopPolling();
+    else if(getTokens()) startPolling();
+  });
+
+  // ---- Session phase tracking (for chart markers) ----
+  function sessionStart(){ sessionMarkers = [{ t: Date.now(), phase: 'Inhale' }]; }
+  function sessionMark(phase){ sessionMarkers.push({ t: Date.now(), phase }); }
+  function sessionEnd(){ /* markers are kept on the chart until the next session starts */ }
 
   async function snapshotNow(){
     const token = await getValidAccessToken();
@@ -662,7 +806,7 @@ const Health = (function(){
   handleRedirectIfPresent().then(updateButton);
   updateButton();
 
-  return { captureBefore, captureAfterAndCompare };
+  return { captureBefore, captureAfterAndCompare, sessionStart, sessionMark, sessionEnd };
 })();
 </script>
 <script>
@@ -880,6 +1024,7 @@ const Health = (function(){
     phaseLabel.textContent = phase.name;
     setActiveField(phase.key);
     beep(phase.freq);
+    Health.sessionMark(phase.name);
     phaseStart = ts;
     raf = requestAnimationFrame(renderFrame);
   }
@@ -906,6 +1051,7 @@ const Health = (function(){
     phaseStart = performance.now();
     raf = requestAnimationFrame(renderFrame);
     Object.values(inputs).forEach(i => i.disabled = true);
+    Health.sessionStart();
     Health.captureBefore();
   }
 
@@ -919,6 +1065,7 @@ const Health = (function(){
     setActiveField(null);
     hint.textContent = 'Set your counts, then press Begin.';
     Object.values(inputs).forEach(i => i.disabled = false);
+    Health.sessionEnd();
     Health.captureAfterAndCompare();
   }
 
